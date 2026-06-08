@@ -1,0 +1,114 @@
+"""OpenClaw robot MCP server.
+
+Exposes three tools to OpenClaw (over stdio):
+    get_status()                      -> robot + lidar status
+    drive(linear, angular, duration)  -> safe motion command
+    stop()                            -> immediate halt
+
+Run standalone:  python -m robot.mcp_server
+OpenClaw launches it via the mcp.servers entry in openclaw.config.json5.
+"""
+from __future__ import annotations
+
+import json
+
+from mcp.server.fastmcp import FastMCP
+
+from .config import Config
+from .hardware.lidar import LidarClient
+from .hardware.motors import MotorClient
+from .safety import SafetySupervisor
+
+cfg = Config.load()
+_lidar = LidarClient(cfg)
+_lidar.start()
+_motors = MotorClient(cfg)
+_supervisor = SafetySupervisor(_motors, _lidar, cfg)
+
+mcp = FastMCP("openclaw-robot")
+
+
+@mcp.tool()
+def get_status() -> str:
+    """Report the robot's current state and surroundings.
+
+    Returns a JSON object with:
+      - lidar.connected: bool
+      - lidar.sectors: min obstacle distance (metres) in 8 directions
+        (front, front_left, left, rear_left, rear, rear_right, right, front_right)
+      - lidar.nearest: closest obstacle {distance, angle_deg}
+      - last_command: the most recent drive result, if any
+      - safety_caps: configured limits
+    Call this before moving when you are unsure what is around the robot.
+    """
+    summary = _lidar.get_summary() or {}
+    last = _supervisor.last_result
+    status = {
+        "lidar": {
+            "connected": _lidar.is_connected(),
+            "sectors": summary.get("sectors"),
+            "nearest": summary.get("nearest"),
+            "num_points": summary.get("num_points"),
+        },
+        "last_command": (
+            None
+            if last is None
+            else {
+                "linear": last.linear,
+                "angular": last.angular,
+                "duration": last.duration,
+                "blocked": last.blocked,
+                "reason": last.reason,
+            }
+        ),
+        "safety_caps": {
+            "max_linear": cfg.max_linear,
+            "max_angular": cfg.max_angular,
+            "cmd_timeout_s": cfg.cmd_timeout_s,
+            "estop_distance_m": cfg.estop_distance_m,
+        },
+    }
+    return json.dumps(status, indent=2)
+
+
+@mcp.tool()
+def drive(linear: float, angular: float, duration: float = 1.0) -> str:
+    """Move the robot.
+
+    Args:
+        linear: forward/back speed in m/s. Positive = forward, negative = reverse.
+            Clamped to +/- the max_linear safety cap.
+        angular: turn rate in rad/s. Positive = turn left (CCW), negative = right.
+            Clamped to +/- the max_angular safety cap.
+        duration: how long to apply the command, in seconds. Capped at
+            cmd_timeout_s; the robot auto-stops afterwards (deadman).
+
+    Forward motion is blocked when an obstacle is within the e-stop distance, or
+    when lidar data is unavailable (fail-safe). The returned JSON states exactly
+    what was executed, whether it was blocked, and why.
+    """
+    r = _supervisor.drive(linear, angular, duration)
+    return json.dumps(
+        {
+            "executed": {"linear": r.linear, "angular": r.angular, "duration": r.duration},
+            "blocked": r.blocked,
+            "clamped": r.clamped,
+            "reason": r.reason,
+        },
+        indent=2,
+    )
+
+
+@mcp.tool()
+def stop() -> str:
+    """Immediately stop the robot. Always succeeds; bypasses all checks."""
+    _supervisor.stop()
+    return json.dumps({"stopped": True})
+
+
+def main() -> None:
+    mcp.run()
+
+
+if __name__ == "__main__":
+    main()

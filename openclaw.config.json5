@@ -1,0 +1,44 @@
+// OpenClaw config for the robot agent.
+// Copy to ~/.openclaw/openclaw.json on the machine running OpenClaw (the Pi),
+// then fill in OPENROUTER_API_KEY and fix the two ABSOLUTE PATHS below.
+//
+// Apply / inspect:
+//   openclaw config validate
+//   openclaw mcp doctor openclaw-robot --probe
+{
+  env: {
+    // Your OpenRouter key (https://openrouter.ai/keys). Keep it secret.
+    OPENROUTER_API_KEY: "sk-or-REPLACE_ME",
+  },
+
+  agents: {
+    defaults: {
+      // DeepSeek V4 Pro via OpenRouter.
+      model: { primary: "openrouter/deepseek/deepseek-v4-pro" },
+      // Workspace holds AGENTS.md (the robot operating brief) -> system prompt.
+      // ABSOLUTE PATH to this repo on the Pi, e.g. /home/raspberrypi/openclaw-robot
+      workspace: "/home/raspberrypi/openclaw-robot",
+    },
+  },
+
+  mcp: {
+    servers: {
+      "openclaw-robot": {
+        // Use the repo venv's python so `mcp`/`dotenv` are importable.
+        // ABSOLUTE PATH, e.g. /home/raspberrypi/openclaw-robot/.venv/bin/python
+        command: "/home/raspberrypi/openclaw-robot/.venv/bin/python",
+        args: ["-m", "robot.mcp_server"],
+        cwd: "/home/raspberrypi/openclaw-robot",
+        // Robot params are also read from .env in cwd; set critical ones here too.
+        env: {
+          TRIK_IP: "192.168.50.248",
+          TRIK_PORT: "5005",
+          BRIDGE_PORT: "5006",
+        },
+        toolFilter: {
+          include: ["get_status", "drive", "stop"],
+        },
+      },
+    },
+  },
+}
