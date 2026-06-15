@@ -62,7 +62,8 @@ def evaluate_command(
 
     moving_forward = linear > 0.0
     blocked = False
-    if moving_forward:
+    # Lidar-based e-stop / fail-safe only applies when a lidar is fitted.
+    if moving_forward and cfg.lidar_enabled:
         if not lidar_connected or front_distance is None:
             blocked = True
             reasons.append("forward motion blocked: lidar unavailable (fail-safe)")
@@ -100,13 +101,15 @@ class SafetySupervisor:
         self.last_result: Optional[CommandResult] = None
 
     def drive(self, linear: float, angular: float, duration: float) -> CommandResult:
-        summary = self._lidar.get_summary()
-        connected = self._lidar.is_connected()
+        connected = False
         front = None
-        if summary:
-            # Lazy import to avoid a hard dep cycle; pure helper.
-            from bridge.scan_summary import min_forward_distance
-            front = min_forward_distance(summary.get("sectors", {}))
+        if self._lidar is not None:
+            summary = self._lidar.get_summary()
+            connected = self._lidar.is_connected()
+            if summary:
+                # Lazy import to avoid a hard dep cycle; pure helper.
+                from bridge.scan_summary import min_forward_distance
+                front = min_forward_distance(summary.get("sectors", {}))
 
         result = evaluate_command(
             linear, angular, duration, front, connected, self._cfg

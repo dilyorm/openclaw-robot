@@ -16,6 +16,7 @@ def make_cfg(**over):
         cmd_timeout_s=2.0,
         estop_distance_m=0.35,
         lidar_stale_s=1.5,
+        lidar_enabled=True,
     )
     base.update(over)
     return Config(**base)
@@ -73,6 +74,34 @@ def test_pure_turn_allowed_when_obstacle_ahead():
     r = evaluate_command(0.0, 0.8, 1.0, front_distance=0.1, lidar_connected=True, cfg=make_cfg())
     assert r.blocked is False
     assert r.angular == 0.8
+
+
+# -- no-lidar deployment (lidar_enabled=False) -----------------------------
+
+def test_no_lidar_forward_allowed():
+    # Robot without a lidar: forward motion is NOT blocked by the fail-safe.
+    cfg = make_cfg(lidar_enabled=False)
+    r = evaluate_command(0.3, 0.0, 1.0, front_distance=None, lidar_connected=False, cfg=cfg)
+    assert r.blocked is False
+    assert r.linear == 0.3
+
+
+def test_no_lidar_still_clamps_and_caps_duration():
+    cfg = make_cfg(lidar_enabled=False)
+    r = evaluate_command(5.0, 0.0, 99.0, front_distance=None, lidar_connected=False, cfg=cfg)
+    assert r.linear == 0.6        # still clamped
+    assert r.duration == 2.0      # still deadman-capped
+    assert r.blocked is False
+
+
+def test_supervisor_drives_without_lidar():
+    # SafetySupervisor with no lidar object must still send motor commands.
+    motors = FakeMotors()
+    sup = SafetySupervisor(motors, None, make_cfg(lidar_enabled=False))
+    r = sup.drive(0.3, 0.0, 0.05)
+    assert r.blocked is False
+    assert ("send", 0.3, 0.0) in motors.calls
+    sup.stop()
 
 
 # -- SafetySupervisor (stateful) -------------------------------------------

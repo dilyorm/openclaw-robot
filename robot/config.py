@@ -21,6 +21,13 @@ def _i(name: str, default: int) -> int:
     return int(os.getenv(name, default))
 
 
+def _b(name: str, default: bool) -> bool:
+    val = os.getenv(name)
+    if val is None:
+        return default
+    return val.strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass(frozen=True)
 class Config:
     # Robot network
@@ -35,6 +42,10 @@ class Config:
     estop_distance_m: float
     lidar_stale_s: float
 
+    # Lidar present? When False, the lidar listener is not started and the
+    # e-stop / fail-safe forward-block is skipped (set per deployment).
+    lidar_enabled: bool
+
     @classmethod
     def load(cls) -> "Config":
         return cls(
@@ -46,4 +57,5 @@ class Config:
             cmd_timeout_s=_f("CMD_TIMEOUT_S", 2.0),
             estop_distance_m=_f("ESTOP_DISTANCE_M", 0.35),
             lidar_stale_s=_f("LIDAR_STALE_S", 1.5),
+            lidar_enabled=_b("LIDAR_ENABLED", False),
         )

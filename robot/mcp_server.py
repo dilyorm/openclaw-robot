@@ -20,8 +20,10 @@ from .hardware.motors import MotorClient
 from .safety import SafetySupervisor
 
 cfg = Config.load()
-_lidar = LidarClient(cfg)
-_lidar.start()
+_lidar = None
+if cfg.lidar_enabled:
+    _lidar = LidarClient(cfg)
+    _lidar.start()
 _motors = MotorClient(cfg)
 _supervisor = SafetySupervisor(_motors, _lidar, cfg)
 
@@ -33,7 +35,8 @@ def get_status() -> str:
     """Report the robot's current state and surroundings.
 
     Returns a JSON object with:
-      - lidar.connected: bool
+      - lidar.enabled: whether a lidar is fitted on this robot
+      - lidar.connected: bool (fresh scan data available)
       - lidar.sectors: min obstacle distance (metres) in 8 directions
         (front, front_left, left, rear_left, rear, rear_right, right, front_right)
       - lidar.nearest: closest obstacle {distance, angle_deg}
@@ -41,11 +44,12 @@ def get_status() -> str:
       - safety_caps: configured limits
     Call this before moving when you are unsure what is around the robot.
     """
-    summary = _lidar.get_summary() or {}
+    summary = (_lidar.get_summary() if _lidar is not None else None) or {}
     last = _supervisor.last_result
     status = {
         "lidar": {
-            "connected": _lidar.is_connected(),
+            "enabled": cfg.lidar_enabled,
+            "connected": _lidar.is_connected() if _lidar is not None else False,
             "sectors": summary.get("sectors"),
             "nearest": summary.get("nearest"),
             "num_points": summary.get("num_points"),
@@ -83,9 +87,11 @@ def drive(linear: float, angular: float, duration: float = 1.0) -> str:
         duration: how long to apply the command, in seconds. Capped at
             cmd_timeout_s; the robot auto-stops afterwards (deadman).
 
-    Forward motion is blocked when an obstacle is within the e-stop distance, or
-    when lidar data is unavailable (fail-safe). The returned JSON states exactly
-    what was executed, whether it was blocked, and why.
+    When a lidar is fitted, forward motion is blocked if an obstacle is within
+    the e-stop distance or lidar data is unavailable (fail-safe). On a robot
+    without a lidar there is no obstacle sensing, so move in short, low-speed
+    steps. The returned JSON states exactly what was executed, whether it was
+    blocked, and why.
     """
     r = _supervisor.drive(linear, angular, duration)
     return json.dumps(
