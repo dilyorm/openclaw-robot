@@ -25,6 +25,7 @@ if cfg.lidar_enabled:
     _lidar = LidarClient(cfg)
     _lidar.start()
 _motors = MotorClient(cfg)
+_motors.start()  # persistent TCP link to TRIK (reconnects on its own)
 _supervisor = SafetySupervisor(_motors, _lidar, cfg)
 
 mcp = FastMCP("openclaw-robot")
@@ -35,18 +36,20 @@ def get_status() -> str:
     """Report the robot's current state and surroundings.
 
     Returns a JSON object with:
+      - motors.connected: TCP link to the TRIK controller is up
+      - motors.left_enc / right_enc: wheel encoder counts
+      - motors.gyro_z: heading gyro reading
+      - motors.telemetry_age_s: seconds since last telemetry frame
       - lidar.enabled: whether a lidar is fitted on this robot
-      - lidar.connected: bool (fresh scan data available)
-      - lidar.sectors: min obstacle distance (metres) in 8 directions
-        (front, front_left, left, rear_left, rear, rear_right, right, front_right)
-      - lidar.nearest: closest obstacle {distance, angle_deg}
+      - lidar.connected / sectors / nearest: obstacle data (only if a lidar is fitted)
       - last_command: the most recent drive result, if any
       - safety_caps: configured limits
-    Call this before moving when you are unsure what is around the robot.
+    Call this before moving when you are unsure of the robot's state.
     """
     summary = (_lidar.get_summary() if _lidar is not None else None) or {}
     last = _supervisor.last_result
     status = {
+        "motors": _motors.get_state(),
         "lidar": {
             "enabled": cfg.lidar_enabled,
             "connected": _lidar.is_connected() if _lidar is not None else False,

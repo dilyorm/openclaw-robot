@@ -42,6 +42,10 @@ class Config:
     estop_distance_m: float
     lidar_stale_s: float
 
+    # Motor PWM gains: max linear maps to fwd_pwm %, max angular to turn_pwm %.
+    fwd_pwm: int
+    turn_pwm: int
+
     # Lidar present? When False, the lidar listener is not started and the
     # e-stop / fail-safe forward-block is skipped (set per deployment).
     lidar_enabled: bool
@@ -49,8 +53,8 @@ class Config:
     @classmethod
     def load(cls) -> "Config":
         return cls(
-            trik_ip=os.getenv("TRIK_IP", "192.168.50.248"),
-            trik_port=_i("TRIK_PORT", 5005),
+            trik_ip=os.getenv("TRIK_IP", "192.168.50.237"),
+            trik_port=_i("TRIK_PORT", 9090),
             bridge_port=_i("BRIDGE_PORT", 5006),
             max_linear=_f("MAX_LINEAR", 0.6),
             max_angular=_f("MAX_ANGULAR", 1.0),
@@ -58,4 +62,6 @@ class Config:
             estop_distance_m=_f("ESTOP_DISTANCE_M", 0.35),
             lidar_stale_s=_f("LIDAR_STALE_S", 1.5),
             lidar_enabled=_b("LIDAR_ENABLED", False),
+            fwd_pwm=_i("FWD_PWM", 60),
+            turn_pwm=_i("TURN_PWM", 40),
         )

@@ -17,6 +17,8 @@ def make_cfg(**over):
         estop_distance_m=0.35,
         lidar_stale_s=1.5,
         lidar_enabled=True,
+        fwd_pwm=60,
+        turn_pwm=40,
     )
     base.update(over)
     return Config(**base)
