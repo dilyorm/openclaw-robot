@@ -7,60 +7,74 @@
 # Lidar-free: brick.lidar() is NOT called (no lidar fitted; calling it would
 # throw and stop the loop). Wheels = M3/M4, encoders = E3/E4.
 #
-# Re-accepts after a client disconnects, so it keeps running across Pi
-# reconnects (the Pi's MCP server may respawn) instead of dying on first drop.
+# Structured as class Program / execMain / main() to match what the TRIK script
+# runner expects (a bare top-level script does not get executed by the brick).
+# Re-accepts after a client disconnects, so it survives Pi reconnects.
 
 import socket
 
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-server.bind(('0.0.0.0', 9090))
-server.listen(1)
 
-while True:
-    brick.display().clear()
-    brick.display().addLabel("Waiting for Pi...", 10, 10)
-    brick.display().redraw()
+class Program():
 
-    conn, addr = server.accept()
-    conn.setblocking(False)
-
-    brick.display().clear()
-    brick.display().addLabel("Link LIVE (no lidar)", 10, 10)
-    brick.display().redraw()
-
-    brick.encoder("E3").reset()
-    brick.encoder("E4").reset()
+  def execMain(self):
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(('0.0.0.0', 9090))
+    server.listen(1)
 
     while True:
+      brick.display().clear()
+      brick.display().addLabel("Waiting for Pi...", 10, 10)
+      brick.display().redraw()
+
+      conn, addr = server.accept()
+      conn.setblocking(False)
+
+      brick.display().clear()
+      brick.display().addLabel("Link LIVE (no lidar)", 10, 10)
+      brick.display().redraw()
+
+      brick.encoder("E3").reset()
+      brick.encoder("E4").reset()
+
+      while True:
         # 1. SEND TELEMETRY. A send failure means the client is gone.
         try:
-            e3 = brick.encoder("E3").read()
-            e4 = brick.encoder("E4").read()
-            gz = brick.gyroscope().read()[2]   # Z-axis (rotation)
-            conn.sendall(("%d,%d,%d\n" % (e3, e4, gz)).encode('utf-8'))
+          e3 = brick.encoder("E3").read()
+          e4 = brick.encoder("E4").read()
+          gz = brick.gyroscope().read()[2]   # Z-axis (rotation)
+          conn.sendall(("%d,%d,%d\n" % (e3, e4, gz)).encode('utf-8'))
         except:
-            break  # disconnected -> stop motors and re-accept
+          break  # disconnected -> stop motors and re-accept
 
         # 2. RECEIVE MOTOR COMMAND (non-blocking).
         try:
-            cmd = conn.recv(1024).decode('utf-8')
-            if cmd == '':
-                break  # peer closed the connection
-            line = cmd.strip().split('\n')[-1]
-            parts = line.split(',')
-            if len(parts) == 2:
-                brick.motor("M3").setPower(int(parts[0]))
-                brick.motor("M4").setPower(int(parts[1]))
+          cmd = conn.recv(1024).decode('utf-8')
+          if cmd == '':
+            break  # peer closed the connection
+          line = cmd.strip().split('\n')[-1]
+          parts = line.split(',')
+          if len(parts) == 2:
+            brick.motor("M3").setPower(int(parts[0]))
+            brick.motor("M4").setPower(int(parts[1]))
         except:
-            pass  # no command this tick (non-blocking recv)
+          pass  # no command this tick (non-blocking recv)
 
         script.wait(50)  # ~20 Hz
 
-    # Client gone: stop the wheels, close, loop back to accept the next one.
-    brick.motor("M3").powerOff()
-    brick.motor("M4").powerOff()
-    try:
+      # Client gone: stop the wheels, close, re-accept the next one.
+      brick.motor("M3").powerOff()
+      brick.motor("M4").powerOff()
+      try:
         conn.close()
-    except:
+      except:
         pass
+
+
+def main():
+  program = Program()
+  program.execMain()
+
+
+if __name__ == '__main__':
+  main()
